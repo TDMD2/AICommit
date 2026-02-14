@@ -1,26 +1,418 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:ital,wght@0,400;0,700;1,400&family=Courier+Prime&display=swap');
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Dark Forge Theme */
+  --bg-dark: #0f1115;
+  --bg-panel: #1b1e26;
+  --bg-input: #272a34;
+
+  --accent-primary: #8b5cf6;
+  /* Cyber Purple */
+  --accent-hover: #7c3aed;
+  --accent-glow: rgba(139, 92, 246, 0.4);
+
+  --text-main: #ffffff;
+  --text-muted: #9ca3af;
+  --border-color: #374151;
+
+  --font-comic: 'Bangers', cursive;
+  --font-body: 'Comic Neue', sans-serif;
+  --font-mono: 'Courier Prime', monospace;
+
+  --radius-pill: 9999px;
+  --radius-md: 12px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ─── Canvas Area (Top/Middle) ─── */
+.comic-canvas-container {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow: hidden;
+  /* Canvas handles its own scroll if needed, or fit to screen */
+  position: relative;
+  /* Optional subtle grid pattern for "Forge" feel */
+  background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.comic-canvas {
+  background: transparent;
+  /* Remove white sheet look */
+  box-shadow: none;
+  /* Remove "page" shadow */
+  max-height: 100%;
+  max-width: 100%;
+  /* Maintain aspect ratio handled by specific grid classes */
+}
+
+/* ─── Bottom Chat Interface (Sidebar -> BottomBar) ─── */
+.sidebar {
+  width: 100%;
+  padding: 20px;
+  background-color: var(--bg-panel);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: center;
+  z-index: 100;
+  box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.3);
+}
+
+.chat-interface-container {
+  width: 100%;
+  max-width: 900px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.chat-interface-container:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* Text Area (Top) */
+.chat-input-area {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  resize: none;
+  height: 50px;
+  padding: 5px;
+  outline: none;
+}
+
+.chat-input-area::placeholder {
+  color: var(--text-muted);
+}
+
+/* Bottom Controls */
+.chat-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  /* Subtle separator */
+  padding-top: 10px;
+}
+
+.chat-options-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Sub-inputs (Style, Grid) */
+.chat-sub-input,
+.chat-sub-select {
+  background: rgba(255, 255, 255, 0.05);
+  /* Default closed state */
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 12px;
+  color: #d1d5db;
+  /* lighter grey */
+  font-size: 0.85rem;
+  height: 32px;
+  cursor: pointer;
+  outline: none;
+  /* Ensure arrow is white if possible or remove */
+  accent-color: var(--accent-primary);
+}
+
+/* Force dark background for options when expanded */
+.chat-sub-select option {
+  background-color: #1b1e26;
+  /* Hard-coded dark background (matches --bg-panel) */
+  color: #e5e7eb;
+  /* Matches text-main */
+  padding: 10px;
+}
+
+.chat-sub-input {
+  width: 150px;
+}
+
+.chat-sub-input:focus,
+.chat-sub-select:focus {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+/* Toggle Pills */
+.chat-pill-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 5px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #9ca3af;
+  height: 32px;
+  user-select: none;
+}
+
+.chat-pill-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.chat-pill-toggle input {
+  accent-color: var(--accent-primary);
+  width: 14px;
+  height: 14px;
+}
+
+/* Submit Button */
+.chat-submit-btn {
+  background: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+  flex-shrink: 0;
+}
+
+.chat-submit-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: scale(1.05);
+}
+
+.chat-submit-btn:disabled {
+  background: var(--border-color);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.forge-arrow-icon {
+  width: 18px;
+  height: 18px;
+  fill: white;
+}
+
+.loading-dots {
+  font-weight: bold;
+  font-size: 0.8rem;
+  color: white;
+}
+
+
+
+/* ─── Grid Specifics (Reused) ─── */
+/* ─── Grid Specifics (Reused) ─── */
+.canvas-grid-1 {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  aspect-ratio: 1 / 1.414;
+  height: 90%;
+  max-width: 600px;
+}
+
+.canvas-grid-2 {
+  display: grid;
+  grid-template-columns: 58% 42%;
+  grid-template-rows: 1fr;
+  gap: 10px;
+  aspect-ratio: 1.5 / 1;
+  width: 90%;
+}
+
+.canvas-grid-3a {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 65% 35%;
+  grid-template-areas:
+    "p1 p3"
+    "p2 p3";
+  gap: 10px;
+  aspect-ratio: 1.2 / 1;
+  width: 90%;
+  max-width: 900px;
+}
+
+.canvas-grid-3b {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 40% 60%;
+  grid-template-areas:
+    "p1 p3"
+    "p2 p3";
+  gap: 10px;
+  aspect-ratio: 1.2 / 1;
+  width: 90%;
+  max-width: 900px;
+}
+
+.canvas-grid-4 {
+  display: grid;
+  grid-template-columns: 43% 57%;
+  grid-template-rows: 48% 52%;
+  gap: 10px;
+  /* aspect-ratio: 1 / 1.414; Portrait page with 4 panels */
+  aspect-ratio: 1 / 1.2;
+  height: 90%;
+  max-width: 800px;
+}
+
+.canvas-grid-4s {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 50% 35% 15%;
+  grid-template-areas:
+    "p1 p3"
+    "p2 p3"
+    "p2 p4";
+  gap: 10px;
+  aspect-ratio: 1 / 1;
+  height: 90%;
+  max-width: 800px;
+}
+
+/* Panel Styling */
+.canvas-panel {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-color);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  min-width: 0;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.canvas-panel.filled:hover {
+  border-color: rgba(139, 92, 246, 0.5);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.25);
+}
+
+.canvas-panel.selected {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 20px var(--accent-glow), inset 0 0 15px rgba(139, 92, 246, 0.1);
+  transform: scale(1.01);
+  z-index: 5;
+}
+
+/* Panel Indicator Chip in Sidebar */
+.panel-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  color: #c4b5fd;
+  width: fit-content;
+}
+
+.panel-indicator-dismiss {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 2px;
+  transition: color 0.15s ease;
+}
+
+.panel-indicator-dismiss:hover {
+  color: white;
+}
+
+.canvas-panel img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Captions & Bubbles */
+/* Captions & Bubbles */
+.canvas-caption {
+  position: absolute;
+  bottom: 10px;
+  width: 90%;
+  background: white;
+  color: black;
+  /* Fix readability on white bg */
+  border: 2px solid black;
+  padding: 8px;
+  /* Slightly more padding */
+  border-radius: 10px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 0.95rem;
+  /* Slightly larger */
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+  z-index: 10;
+  /* Ensure on top */
+}
+
+.canvas-narration {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  /* Stretch to fit if needed, or keep discrete */
+  background: #fffbeb;
+  /* Light yellow paper look */
+  color: black;
+  /* Fix readability */
+  border: 2px solid black;
+  padding: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+  z-index: 10;
 }

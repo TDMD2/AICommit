@@ -9,7 +9,7 @@ export default function Home() {
   const [story, setStory] = useState("");
   const [style, setStyle] = useState("");
   const [spreads, setSpreads] = useState<Spread[]>([]);
-  const [grid, setGrid] = useState<"grid-1" | "grid-2" | "grid-4" | "grid-3a" | "grid-3b" | "grid-4s">("grid-1");
+  const [grid, setGrid] = useState<"grid-0" | "grid-1" | "grid-2" | "grid-3">("grid-0");
   const [selectedPanel, setSelectedPanel] = useState<number | null>(null);
   const [captions, setCaptions] = useState(true);
   const [bubbles, setBubbles] = useState(true);
@@ -30,7 +30,7 @@ export default function Home() {
           description: story, // Keeping description for backward compat logic helper, but mainly using story/style
           story,
           style,
-          format: grid === "grid-1" ? "slide" : "comic",
+          format: "comic",
           grid,
           captions,
           bubbles,

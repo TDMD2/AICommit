@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { Spread } from "@/types/comic";
 
 interface ComicCanvasProps {
-    grid: "grid-1" | "grid-2" | "grid-4" | "grid-3a" | "grid-3b" | "grid-4s";
+    grid: "grid-0" | "grid-1" | "grid-2" | "grid-3";
     spread: Spread | null;
     isGenerating: boolean;
     selectedPanel: number | null;
@@ -13,17 +13,9 @@ interface ComicCanvasProps {
 }
 
 export default function ComicCanvas({ grid, spread, isGenerating, selectedPanel, onSelectPanel }: ComicCanvasProps) {
-    // Generate placeholder panels based on grid selection
     const getPlaceholders = () => {
-        switch (grid) {
-            case "grid-1": return [1];
-            case "grid-2": return [1, 2];
-            case "grid-3a":
-            case "grid-3b": return [1, 2, 3];
-            case "grid-4":
-            case "grid-4s": return [1, 2, 3, 4];
-            default: return [1];
-        }
+        // All grids are 4-panel layouts
+        return [1, 2, 3, 4];
     };
 
     const panels = spread ? (spread.rightPanels.length > 0 ? spread.rightPanels : spread.leftPanels) : [];

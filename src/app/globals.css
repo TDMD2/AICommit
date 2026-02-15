@@ -244,73 +244,87 @@ main {
 
 
 
-/* ─── Grid Specifics (Reused) ─── */
-/* ─── Grid Specifics (Reused) ─── */
-.canvas-grid-1 {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: 1fr;
-  aspect-ratio: 1 / 1.414;
-  height: 90%;
-  max-width: 600px;
-}
+/* ─── Grid Layouts (All 4-Panel) ─── */
 
-.canvas-grid-2 {
-  display: grid;
-  grid-template-columns: 58% 42%;
-  grid-template-rows: 1fr;
-  gap: 10px;
-  aspect-ratio: 1.5 / 1;
-  width: 90%;
-}
-
-.canvas-grid-3a {
+/* Grid 0: Classic 2×2 Equal Quad */
+.canvas-grid-0 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 65% 35%;
-  grid-template-areas:
-    "p1 p3"
-    "p2 p3";
-  gap: 10px;
-  aspect-ratio: 1.2 / 1;
-  width: 90%;
-  max-width: 900px;
-}
-
-.canvas-grid-3b {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 40% 60%;
-  grid-template-areas:
-    "p1 p3"
-    "p2 p3";
-  gap: 10px;
-  aspect-ratio: 1.2 / 1;
-  width: 90%;
-  max-width: 900px;
-}
-
-.canvas-grid-4 {
-  display: grid;
-  grid-template-columns: 43% 57%;
-  grid-template-rows: 48% 52%;
-  gap: 10px;
-  /* aspect-ratio: 1 / 1.414; Portrait page with 4 panels */
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
   aspect-ratio: 1 / 1.2;
   height: 90%;
   max-width: 800px;
 }
 
-.canvas-grid-4s {
+/* Grid 1: Staggered Asymmetric (small top-left, tall right, tall bottom-left, small bottom-right) */
+.canvas-grid-1 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 50% 35% 15%;
+  grid-template-rows: 28% 44% 28%;
   grid-template-areas:
-    "p1 p3"
-    "p2 p3"
-    "p2 p4";
-  gap: 10px;
-  aspect-ratio: 1 / 1;
+    "p1 p2"
+    "p3 p2"
+    "p3 p4";
+  gap: 6px;
+  aspect-ratio: 3 / 4;
+  height: 90%;
+  max-width: 800px;
+}
+
+.canvas-grid-1> :nth-child(1) {
+  grid-area: p1;
+}
+
+.canvas-grid-1> :nth-child(2) {
+  grid-area: p2;
+}
+
+.canvas-grid-1> :nth-child(3) {
+  grid-area: p3;
+}
+
+.canvas-grid-1> :nth-child(4) {
+  grid-area: p4;
+}
+
+/* Grid 2: 3-Column Top + Wide Bottom (2 small top-left, tall right, wide bottom-left) */
+.canvas-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 45% 55%;
+  grid-template-areas:
+    "p1 p2 p3"
+    "p4 p4 p3";
+  gap: 6px;
+  aspect-ratio: 1 / 1.2;
+  height: 90%;
+  max-width: 900px;
+}
+
+.canvas-grid-2> :nth-child(1) {
+  grid-area: p1;
+}
+
+.canvas-grid-2> :nth-child(2) {
+  grid-area: p2;
+}
+
+.canvas-grid-2> :nth-child(3) {
+  grid-area: p3;
+}
+
+.canvas-grid-2> :nth-child(4) {
+  grid-area: p4;
+}
+
+/* Grid 3: Diagonal Asymmetric (wide top-left, narrow top-right, narrow bottom-left, wide bottom-right) */
+.canvas-grid-3 {
+  display: grid;
+  grid-template-columns: 65% 35%;
+  grid-template-rows: 45% 55%;
+  gap: 6px;
+  aspect-ratio: 1 / 1.2;
   height: 90%;
   max-width: 800px;
 }
@@ -401,18 +415,18 @@ main {
 
 .canvas-narration {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  right: 10px;
-  /* Stretch to fit if needed, or keep discrete */
-  background: #fffbeb;
-  /* Light yellow paper look */
+  top: 6px;
+  left: 6px;
+  width: fit-content;
+  max-width: 55%;
+  background: rgba(255, 251, 235, 0.85);
   color: black;
-  /* Fix readability */
-  border: 2px solid black;
-  padding: 8px;
+  border: 1.5px solid rgba(0, 0, 0, 0.6);
+  padding: 5px 8px;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
-  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.15);
   z-index: 10;
+  pointer-events: none;
 }

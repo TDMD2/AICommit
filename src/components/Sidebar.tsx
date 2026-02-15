@@ -8,8 +8,8 @@ interface SidebarProps {
     setStory: (story: string) => void;
     style: string;
     setStyle: (style: string) => void;
-    grid: "grid-1" | "grid-2" | "grid-4" | "grid-3a" | "grid-3b" | "grid-4s";
-    setGrid: (grid: "grid-1" | "grid-2" | "grid-4" | "grid-3a" | "grid-3b" | "grid-4s") => void;
+    grid: "grid-0" | "grid-1" | "grid-2" | "grid-3";
+    setGrid: (grid: "grid-0" | "grid-1" | "grid-2" | "grid-3") => void;
     captions: boolean;
     setCaptions: (captions: boolean) => void;
     bubbles: boolean;
@@ -90,14 +90,27 @@ export default function Sidebar({
                 {/* Bottom: Options & Actions */}
                 <div className="chat-controls-row">
                     <div className="chat-options-group">
-                        <input
-                            type="text"
-                            className="chat-sub-input"
-                            placeholder="Style (e.g. Manga)"
+                        <select
+                            className="chat-sub-select"
                             value={style}
                             onChange={(e) => setStyle(e.target.value)}
                             title="Visual Style"
-                        />
+                        >
+                            <option value="">No Style (Default)</option>
+                            <option value="Japanese">Japanese (Manga)</option>
+                            <option value="Nihonga">Nihonga</option>
+                            <option value="Franco-Belgian">Franco-Belgian</option>
+                            <option value="American (modern)">American (Modern)</option>
+                            <option value="American (1950)">American (1950)</option>
+                            <option value="Flying saucer">Flying Saucer</option>
+                            <option value="Humanoid">Humanoid</option>
+                            <option value="Haddock">Haddock</option>
+                            <option value="Armorican">Armorican</option>
+                            <option value="3D Render">3D Render</option>
+                            <option value="Klimt">Klimt</option>
+                            <option value="Medieval">Medieval</option>
+                            <option value="Egyptian">Egyptian</option>
+                        </select>
 
                         <select
                             className="chat-sub-select"
@@ -105,12 +118,10 @@ export default function Sidebar({
                             onChange={(e) => setGrid(e.target.value as any)}
                             title="Panel Layout"
                         >
-                            <option value="grid-1">Single Panel</option>
-                            <option value="grid-2">Dual Split</option>
-                            <option value="grid-3a">Triple (Top)</option>
-                            <option value="grid-3b">Triple (Low)</option>
-                            <option value="grid-4">Quad Grid</option>
-                            <option value="grid-4s">Quad Asym</option>
+                            <option value="grid-0">Grid 0</option>
+                            <option value="grid-1">Grid 1 ▐▌</option>
+                            <option value="grid-2">Grid 2 ▐▌▄</option>
+                            <option value="grid-3">Grid 3 ▞▞</option>
                         </select>
 
                         <label className="chat-pill-toggle">

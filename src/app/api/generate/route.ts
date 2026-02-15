@@ -21,7 +21,29 @@ export async function POST(req: NextRequest) {
 
         // Backward compatibility: use description if story/style not provided
         const finalStory = story || description;
-        const finalStyle = style || "";
+        const selectedStyle = style || "";
+
+        // Helper to get detailed style prompt
+        const getStylePrompt = (styleName: string): string => {
+            const styleMap: Record<string, string> = {
+                "Japanese": "Japanese Manga style, black and white ink illustration, screentones, high contrast, detailed background, anime aesthetic, traditional manga inking, no colors, monochrome.",
+                "Nihonga": "Nihonga style, traditional Japanese painting, mineral pigments, gold/silver leaf details, washi paper texture, flat perspective, elegant nature motifs, soft texture, japanese art.",
+                "Franco-Belgian": "Franco-Belgian comic style (Bande Dessinée), Ligne Claire (Clear Line) style, uniform bold outlines, flat vibrant colors, no cross-hatching, highly detailed backgrounds with cartoonish characters, Hergé/Tintin aesthetic.",
+                "American (modern)": "Modern American superhero comic style, digital coloring, high fidelity, cinematic lighting, detailed shading, realistic anatomy, dynamic action, 4k resolution, marvel/dc modern era aesthetic.",
+                "American (1950)": "Retro 1950s Golden Age comic book style, Ben-Day dots, halftone pattern, CMYK offset printing look, vintage paper texture, bold black ink outlines, primary colors, pulp fiction aesthetic, aged comic book look.",
+                "Flying saucer": "Retro 1950s Sci-Fi comic cover art, pulp magazine style, mysterious flying saucers, dramatic lighting, vintage futuristic aesthetic, bold colors, grainy texture.",
+                "Humanoid": "Sci-fi humanoid creative concept art, bio-mechanical details, anthropomorphic character design, intricate textures, surreal and futuristic features, cinematic lighting.",
+                "Haddock": "Ligne Claire style character caricature, expressive, bold uniform lines, flat colors, humorous exaggeration, detailed clothing texture, distinct Belgian comic aesthetic.",
+                "Armorican": "Classic French comic style (Asterix), humorous cartoon style, expressive characters, historical Gaul setting, vibrant colors, ink lines, detailed scenic backgrounds.",
+                "3D Render": "3D stylized render, Pixar/Disney animation style, soft lighting, ambient occlusion, 3D character design, vibrant colors, high quality render, c4d, blender.",
+                "Klimt": "Gustav Klimt art style, Golden Phase, gold leaf textures, mosaic patterns, intricate geometric ornamentation, sensual and decorative, rich jewel tones, symbolism, oil painting.",
+                "Medieval": "Medieval illuminated manuscript art style, parchment paper texture, gold leaf accents, gothic calligraphy influences, flat perspective, intricate floral borders, historical aesthetic.",
+                "Egyptian": "Ancient Egyptian wall art style, hieroglyphic details, profile figures, papyrus texture, sandstone colors, gold and lapis lazuli accents, 2D perspective, historical mural."
+            };
+            return styleMap[styleName] || styleName; // Fallback to raw string if not found or custom
+        };
+
+        const finalStylePrompt = getStylePrompt(selectedStyle);
 
         if (!finalStory || typeof finalStory !== "string") {
             return NextResponse.json(
@@ -40,62 +62,34 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        if (format === "slide" || (grid && grid === "grid-1")) {
-            // Single Slide Generation
-            let prompt = `Comic book panel. ${finalStory}.`;
-            if (finalStyle) {
-                prompt += ` Style: ${finalStyle}, comic book art, bold ink lines, vibrant colors, dramatic lighting.`;
-            } else {
-                prompt += ` Style: comic book art, bold ink lines, vibrant colors, dramatic lighting.`;
-            }
-
-            const imageData = await generatePanelImage(prompt);
-
-            return NextResponse.json({
-                title: "Single Slide",
-                spreads: [{
-                    leftPanels: [],
-                    rightPanels: [{
-                        src: imageData,
-                        caption: finalStory
-                    }],
-                    leftLayout: "blank",
-                    rightLayout: "full-page"
-                }]
-            });
-        }
-
-        // Comic Page Generation (Grid 2, 3, or 4)
-        let panelCount = 4;
-        if (grid === "grid-2") panelCount = 2;
-        if (grid === "grid-3a" || grid === "grid-3b") panelCount = 3;
-        if (grid === "grid-4s") panelCount = 4;
+        // All grids are 4-panel layouts
+        const panelCount = 4;
 
         let script: { title: string; spreads: SpreadScript[] } | null = null;
-        let usedModel = "DeepSeek-R1-0528-Qwen3-8B";
+        let usedModel = "gpt-5.2";
 
-        // Logic: ONLY use DeepSeek (HF) for script generation
-        // User requested removing GPT-5.2 to rely on the HF/Flux stack
-        let generationError = "";
-
-        if (hfToken) {
-            console.log("Generating script with DeepSeek (HF)...");
-            try {
-                script = await generateScriptWithDeepSeekHF(finalStory, finalStyle, panelCount, hfToken);
-            } catch (err: any) {
-                console.error("DeepSeek generation failed:", err);
-                generationError = err.message || String(err);
-            }
-        } else {
+        // Use GPT-5.2 only for script generation (no fallback)
+        if (!openaiApiKey) {
             return NextResponse.json(
-                { error: "Missing HF_TOKEN. Please configure it for DeepSeek & Flux." },
+                { error: "Missing OPENAI_API_KEY. Please configure it for GPT-5.2 script generation." },
+                { status: 500 }
+            );
+        }
+
+        console.log("Generating script with GPT-5.2 (OpenAI)...");
+        try {
+            script = await generateScriptWithGPT5(finalStory, selectedStyle, panelCount, openaiApiKey);
+        } catch (err: any) {
+            console.error("GPT-5.2 generation failed:", err);
+            return NextResponse.json(
+                { error: `Failed to generate comic script: ${err.message || String(err)}` },
                 { status: 500 }
             );
         }
 
         if (!script) {
             return NextResponse.json(
-                { error: `Failed to generate comic script. Details: ${generationError || "Please check loop logic."}` },
+                { error: "Failed to generate comic script." },
                 { status: 500 }
             );
         }
@@ -123,50 +117,150 @@ export async function POST(req: NextRequest) {
         }
 
 
-        const spreads = await Promise.all(script.spreads.map(async (spread: any) => {
-            // Generate all panel images in parallel (Right Panels)
-            const rightPanels = await Promise.all((spread.rightPanels || []).map(async (panel: any) => {
-                let fullScenePrompt = `${panel.scene}.`;
-                if (finalStyle) {
-                    fullScenePrompt += ` Style: ${finalStyle}, comic book art.`;
-                } else {
-                    fullScenePrompt += ` Style: comic book art.`;
+        // 1. Identify the First Panel
+        const firstSpread = script.spreads[0];
+        let firstPanel: any = null;
+        let isFirstPanelRight = true; // Track if it's in rightPanels or leftPanels
+
+        if (firstSpread.rightPanels && firstSpread.rightPanels.length > 0) {
+            firstPanel = firstSpread.rightPanels[0];
+        } else if (firstSpread.leftPanels && firstSpread.leftPanels.length > 0) {
+            firstPanel = firstSpread.leftPanels[0];
+            isFirstPanelRight = false;
+        }
+
+        let characterTraits = "";
+        let firstPanelImage = "";
+
+        // 2. Generate & Analyze First Panel (if exists)
+        if (firstPanel) {
+            console.log("Generating First Panel for Character Analysis...");
+            let firstPrompt = `${firstPanel.scene}.`;
+            if (finalStylePrompt) firstPrompt += ` ${finalStylePrompt}`;
+            else firstPrompt += ` Style: comic book art.`;
+
+            try {
+                firstPanelImage = await generatePanelImage(firstPrompt);
+
+                // Analyze
+                if (openaiApiKey) {
+                    console.log("Analyzing First Panel for Traits...");
+                    characterTraits = await analyzeImageForCharacterTraits(firstPanelImage, openaiApiKey);
+                    console.log(`Extracted Traits: ${characterTraits}`);
                 }
-                console.log(`[Generate] Prompt: ${fullScenePrompt}`);
+            } catch (err) {
+                console.error("Failed to generate/analyze first panel:", err);
+                // Fallback: generate normally in loop, but here we just leave firstPanelImage empty to retry or similar?
+                // Actually, if it failed, we might want to let the loop fail or handle it. 
+                // Let's assume if it failed, we just continue and try to regenerate in loop?
+                // Simplest is to just set firstPanelImage to null and let loop handle it? 
+                // But the loop logic below will need adjustment.
+                // Let's just let it be empty and handle in loop.
+            }
+        }
 
-                const imageData = await generatePanelImage(fullScenePrompt);
-                return {
-                    src: imageData,
-                    narration: captions ? panel.narration : undefined,
-                    caption: bubbles ? panel.caption : undefined,
-                };
-            }));
+        // Helper: build prompt for a panel
+        const buildPanelPrompt = (panel: any): string => {
+            let fullScenePrompt = characterTraits
+                ? `[Main character: ${characterTraits}] ${panel.scene}.`
+                : `${panel.scene}.`;
+            if (finalStylePrompt) {
+                fullScenePrompt += ` ${finalStylePrompt}`;
+            } else {
+                fullScenePrompt += ` Style: comic book art.`;
+            }
+            return fullScenePrompt;
+        };
 
-            // Generate all panel images in parallel (Left Panels - if any)
-            const leftPanels = await Promise.all((spread.leftPanels || []).map(async (panel: any) => {
-                let fullScenePrompt = `${panel.scene}.`;
-                if (finalStyle) {
-                    fullScenePrompt += ` Style: ${finalStyle}, comic book art.`;
-                } else {
-                    fullScenePrompt += ` Style: comic book art.`;
+        // Generate panels SEQUENTIALLY to avoid rate-limiting by FLUX/fal-ai
+        const spreads = [];
+        for (let spreadIndex = 0; spreadIndex < script.spreads.length; spreadIndex++) {
+            const spread = script.spreads[spreadIndex];
+
+            // --- Right Panels (sequential) ---
+            const rightPanels = [];
+            for (let panelIndex = 0; panelIndex < (spread.rightPanels || []).length; panelIndex++) {
+                const panel = spread.rightPanels[panelIndex];
+                const isTheFirstPanel = (spreadIndex === 0 && isFirstPanelRight && panelIndex === 0);
+
+                if (isTheFirstPanel && firstPanelImage) {
+                    rightPanels.push({
+                        src: firstPanelImage,
+                        narration: captions ? panel.narration : undefined,
+                        caption: bubbles ? panel.caption : undefined,
+                    });
+                    continue;
                 }
-                console.log(`[Generate Left] Prompt: ${fullScenePrompt}`);
 
-                const imageData = await generatePanelImage(fullScenePrompt);
-                return {
-                    src: imageData,
-                    narration: captions ? panel.narration : undefined,
-                    caption: bubbles ? panel.caption : undefined,
-                };
-            }));
+                const fullScenePrompt = buildPanelPrompt(panel);
+                console.log(`[Generate] Panel ${panelIndex + 1} prompt: ${fullScenePrompt}`);
 
-            return {
+                // Small delay between requests to avoid rate-limiting
+                if (panelIndex > 0 || spreadIndex > 0) {
+                    await new Promise(r => setTimeout(r, 1500));
+                }
+
+                try {
+                    const imageData = await generatePanelImage(fullScenePrompt);
+                    rightPanels.push({
+                        src: imageData,
+                        narration: captions ? panel.narration : undefined,
+                        caption: bubbles ? panel.caption : undefined,
+                    });
+                } catch (err: any) {
+                    console.error(`[Generate] Panel ${panelIndex + 1} failed:`, err.message);
+                    rightPanels.push({
+                        src: generatePlaceholder(panel.scene, err.message),
+                        narration: captions ? panel.narration : undefined,
+                        caption: bubbles ? panel.caption : undefined,
+                    });
+                }
+            }
+
+            // --- Left Panels (sequential) ---
+            const leftPanels = [];
+            for (let panelIndex = 0; panelIndex < (spread.leftPanels || []).length; panelIndex++) {
+                const panel = spread.leftPanels[panelIndex];
+                const isTheFirstPanel = (spreadIndex === 0 && !isFirstPanelRight && panelIndex === 0);
+
+                if (isTheFirstPanel && firstPanelImage) {
+                    leftPanels.push({
+                        src: firstPanelImage,
+                        narration: captions ? panel.narration : undefined,
+                        caption: bubbles ? panel.caption : undefined,
+                    });
+                    continue;
+                }
+
+                const fullScenePrompt = buildPanelPrompt(panel);
+                console.log(`[Generate Left] Panel ${panelIndex + 1} prompt: ${fullScenePrompt}`);
+
+                await new Promise(r => setTimeout(r, 1500));
+
+                try {
+                    const imageData = await generatePanelImage(fullScenePrompt);
+                    leftPanels.push({
+                        src: imageData,
+                        narration: captions ? panel.narration : undefined,
+                        caption: bubbles ? panel.caption : undefined,
+                    });
+                } catch (err: any) {
+                    console.error(`[Generate Left] Panel ${panelIndex + 1} failed:`, err.message);
+                    leftPanels.push({
+                        src: generatePlaceholder(panel.scene, err.message),
+                        narration: captions ? panel.narration : undefined,
+                        caption: bubbles ? panel.caption : undefined,
+                    });
+                }
+            }
+
+            spreads.push({
                 leftPanels,
                 rightPanels,
-                leftLayout: "blank", // Default or map if needed
-                rightLayout: `canvas-${grid}`, // Use mapped class
-            };
-        }));
+                leftLayout: "blank",
+                rightLayout: `canvas-${grid}`,
+            });
+        }
 
         return NextResponse.json({
             title: script.title,
@@ -195,6 +289,10 @@ async function generateScriptWithDeepSeekHF(description: string, style: string, 
     2.  **Output Format**: You must output a JSON object with a "spreads" array.
     3.  **Visuals Only**: The "scene" field must be a raw visual description for an image generator.
     4.  **No Markdown**: Do not use markdown formatting like \`\`\`json. Just output the raw JSON.
+    5.  **Narration/Dialogue**: EVERY panel must have either "narration" OR "caption" (or both). Do not leave them empty unless absolutely necessary for the story.
+    6.  **MAIN CHARACTER ALWAYS IN FRAME**: The main character(s) from the story MUST appear and be clearly visible in EVERY single panel. Never show a panel without the main character. Always describe the main character's pose, position, and action in each scene description.
+    7.  **NO DUPLICATE PANELS**: Each panel MUST show a DIFFERENT moment, angle, or composition. Vary camera angles (close-up, medium shot, wide shot, low angle, over-the-shoulder). Never repeat the same framing or composition between panels. Each panel must feel visually distinct.
+    8.  **SCENE DESCRIPTION REQUIREMENTS**: Each scene description must include: (a) the main character's full appearance and what they are doing, (b) the camera angle/framing, (c) the background/environment details. Be specific and detailed.
 
     REQUIRED JSON STRUCTURE:
     {
@@ -204,8 +302,8 @@ async function generateScriptWithDeepSeekHF(description: string, style: string, 
           "rightPanels": [
             {
               "scene": "Visual description of panel 1...",
-              "narration": "Narration text...",
-              "caption": "Speech bubble text..."
+              "narration": "Narration text (required if no caption)...",
+              "caption": "Speech bubble text (required if no narration)..."
             },
              {
               "scene": "Visual description of panel 2...",
@@ -326,7 +424,132 @@ async function generateScriptWithDeepSeekHF(description: string, style: string, 
     }
 }
 
+async function generateScriptWithGPT5(description: string, style: string, panelCount: number, apiKey: string): Promise<any> {
+    const systemPrompt = `You are a legendary comic book writer and visual director.
+    Your task is to turn a story description into a JSON script for a single comic book page with EXACTLY ${panelCount} panels.
 
+    Story: "${description}"
+    Visual Style: "${style || "Standard Comic Book"}"
+
+    CRITICAL INSTRUCTIONS:
+    1.  **Panel Count**: You MUST generate EXACTLY ${panelCount} panels. No more, no less.
+    2.  **Output Format**: You must output a JSON object with a "spreads" array.
+    3.  **Visuals Only**: The "scene" field must be a raw visual description for an image generator.
+    4.  **No Markdown**: Do not use markdown formatting like \`\`\`json. Just output the raw JSON.
+    5.  **Narration/Dialogue**: EVERY panel must have either "narration" OR "caption" (or both). Do not leave them empty unless absolutely necessary for the story.
+    6.  **MAIN CHARACTER ALWAYS IN FRAME**: The main character(s) from the story MUST appear and be clearly visible in EVERY single panel. Never show a panel without the main character. Always describe the main character's pose, position, and action in each scene description.
+    7.  **NO DUPLICATE PANELS**: Each panel MUST show a DIFFERENT moment, angle, or composition. Vary camera angles (close-up, medium shot, wide shot, low angle, over-the-shoulder). Never repeat the same framing or composition between panels. Each panel must feel visually distinct.
+    8.  **SCENE DESCRIPTION REQUIREMENTS**: Each scene description must be CONCISE (2-3 sentences MAX). Focus on: (a) the main character and their action, (b) the camera angle, (c) minimal background. Do NOT write long paragraphs. Short, punchy visual descriptions work best for image generation.
+    9.  **CORE ACTION FIRST**: The user's requested action (e.g. "punching", "fighting", "saving") must be the PRIMARY focus. At least 2 panels must show the exact action described. Start the scene description with the main action, not the environment. The climactic panel should show the action at its peak.
+
+    REQUIRED JSON STRUCTURE:
+    {
+      "title": "Comic Title",
+      "spreads": [
+        {
+          "rightPanels": [
+            {
+              "scene": "Visual description of panel 1...",
+              "narration": "Narration text (required if no caption)...",
+              "caption": "Speech bubble text (required if no narration)..."
+            },
+             {
+              "scene": "Visual description of panel 2...",
+              "narration": "Narration text...",
+              "caption": "Speech bubble text..."
+            }
+            // ... exactly ${panelCount} panels in total
+          ],
+          "leftPanels": []
+        }
+      ]
+    }
+    `;
+
+    const openai = new OpenAI({ apiKey });
+
+    const maxRetries = 2;
+    let currentMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Generate the JSON script now for exactly ${panelCount} panels.` }
+    ];
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        console.log(`[GPT-5.2] Generation Attempt ${attempt + 1}/${maxRetries + 1} for ${panelCount} panels...`);
+
+        try {
+            const response = await openai.chat.completions.create({
+                model: "gpt-5.2",
+                messages: currentMessages,
+                max_completion_tokens: 4000,
+                temperature: 0.7,
+            });
+
+            let generatedText = response.choices[0]?.message?.content || "";
+
+            // Strip markdown code fences if present
+            generatedText = generatedText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+
+            const jsonMatch = extractFirstJson(generatedText);
+
+            if (!jsonMatch) {
+                console.error("GPT-5.2 did not return JSON. Content:", generatedText);
+                if (attempt < maxRetries) {
+                    currentMessages.push({ role: "assistant", content: generatedText });
+                    currentMessages.push({ role: "user", content: "You did not return valid JSON. Please output ONLY valid JSON." });
+                    continue;
+                }
+                throw new Error("GPT-5.2 did not return valid JSON.");
+            }
+
+            const parsed = JSON.parse(jsonMatch.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]"));
+
+            // Validate Structure & Fixes
+            let script = parsed;
+            if (Array.isArray(parsed)) script = { title: "Generated Comic", spreads: parsed };
+
+            // Normalize to spreads
+            if (!script.spreads) {
+                if (script.pages && Array.isArray(script.pages)) script.spreads = script.pages;
+                else if (script.panels && Array.isArray(script.panels)) {
+                    script.spreads = [{ rightPanels: script.panels, leftPanels: [] }];
+                }
+            }
+
+            if (!script.spreads || !Array.isArray(script.spreads)) {
+                if (attempt < maxRetries) {
+                    currentMessages.push({ role: "assistant", content: generatedText });
+                    currentMessages.push({ role: "user", content: "Invalid JSON structure. Missing 'spreads' array." });
+                    continue;
+                }
+                throw new Error("GPT-5.2 JSON missing 'spreads' array.");
+            }
+
+            // CHECK PANEL COUNT
+            let totalPanels = 0;
+            script.spreads.forEach((s: any) => {
+                if (s.rightPanels) totalPanels += s.rightPanels.length;
+                if (s.leftPanels) totalPanels += s.leftPanels.length;
+            });
+
+            if (totalPanels !== panelCount) {
+                console.warn(`[GPT-5.2] Mismatch! Requested ${panelCount}, got ${totalPanels}. Retrying...`);
+                if (attempt < maxRetries) {
+                    currentMessages.push({ role: "assistant", content: generatedText });
+                    currentMessages.push({ role: "user", content: `Create exactly ${panelCount} panels. You generated ${totalPanels}. Please fix.` });
+                    continue;
+                }
+                console.error(`[GPT-5.2] Failed to generate correct panel count after retries. Returning ${totalPanels} panels.`);
+            }
+
+            return script;
+
+        } catch (error: any) {
+            console.error(`GPT-5.2 attempt ${attempt + 1} failed:`, error);
+            if (attempt === maxRetries) throw error;
+        }
+    }
+}
 
 
 async function generatePanelImage(
@@ -340,27 +563,53 @@ async function generatePanelImage(
 
     const hf = new HfInference(hfToken);
 
-    // Prompt already contains style instructions from the caller
-    const prompt = `Comic book panel. ${sceneDescription}. NO text bubbles in image.`;
+    // Truncate the scene description to avoid prompt overload (FLUX works best under ~120 words)
+    const truncatedScene = sceneDescription.split(/\s+/).slice(0, 120).join(' ');
 
-    try {
-        console.log("Generating image with FLUX.1-dev (fal-ai)...");
+    // Prompt: positive quality keywords that FLUX.2 responds to well
+    const prompt = `Professional comic book illustration. ${truncatedScene} Masterful human anatomy, dynamic pose, professional illustration quality. Vivid colors, cinematic lighting, sharp details.`;
 
-        const response = await hf.textToImage({
-            model: "black-forest-labs/FLUX.1-dev",
-            inputs: prompt,
-            provider: "fal-ai",
-        });
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`Generating image with FLUX.2-dev-Turbo (fal-ai)... attempt ${attempt}/${maxRetries}`);
 
-        // Force cast to Blob
-        const blob = response as unknown as Blob;
-        const buffer = Buffer.from(await blob.arrayBuffer());
-        return `data:image/jpeg;base64,${buffer.toString("base64")}`;
+            const response = await hf.textToImage({
+                model: "fal/FLUX.2-dev-Turbo",
+                inputs: prompt,
+                provider: "fal-ai",
+            });
 
-    } catch (error: any) {
-        console.error("FLUX (fal-ai) generation failed:", error);
-        throw new Error(`Image Generation Error (fal-ai): ${error.message}`);
+            // Force cast to Blob
+            const blob = response as unknown as Blob;
+            const buffer = Buffer.from(await blob.arrayBuffer());
+
+            // Validate: reject empty or suspiciously small blobs
+            // Normal FLUX images are 50KB+; anything under 20KB is likely a near-black/corrupt image
+            if (buffer.length < 20000) {
+                console.warn(`[FLUX] Attempt ${attempt}: received suspiciously small image (${buffer.length} bytes), likely dark/corrupt. Retrying...`);
+                if (attempt < maxRetries) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    continue;
+                }
+                throw new Error(`Image too small (${buffer.length} bytes) - likely a dark/corrupt render.`);
+            }
+
+            console.log(`[FLUX] Success: ${buffer.length} bytes`);
+            return `data:image/jpeg;base64,${buffer.toString("base64")}`;
+
+        } catch (error: any) {
+            console.error(`FLUX attempt ${attempt} failed:`, error.message);
+            if (attempt < maxRetries) {
+                await new Promise(r => setTimeout(r, 2000));
+                continue;
+            }
+            throw new Error(`Image Generation Error (fal-ai): ${error.message}`);
+        }
     }
+
+    // Should never reach here, but just in case
+    throw new Error("Image generation failed after all retries.");
 }
 
 function generatePlaceholder(text: string, errorDetail?: string): string {
@@ -422,4 +671,36 @@ function extractFirstJson(text: string): string | null {
     // DeepSeek might truncate, so let's just return what we have if braceCount > 0
     // But usually that means invalid JSON.
     return null;
+}
+
+async function analyzeImageForCharacterTraits(imageUrl: string, apiKey: string): Promise<string> {
+    try {
+        const openai = new OpenAI({ apiKey });
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a comic book art analyst. Look at this comic panel illustration and output ONLY 5-7 comma-separated visual keywords describing the MAIN illustrated character's constant visual features (costume, colors, accessories). Example output: 'red-gold armor, blue arc reactor, angular helmet, metallic suit, broad shoulders'. No sentences, no articles, no verbs. Just short visual tags describing the drawn character's appearance."
+                },
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: imageUrl,
+                            },
+                        },
+                    ],
+                },
+            ],
+            max_tokens: 60,
+        });
+
+        return response.choices[0]?.message?.content?.trim() || "";
+    } catch (error) {
+        console.error("Error analyzing image for traits:", error);
+        return "";
+    }
 }

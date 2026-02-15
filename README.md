@@ -1,22 +1,22 @@
-# 🦸 AI Comic Book Generator
+# Comic Book Generator
 
-An AI-powered web application that generates full comic book pages from simple text descriptions. Type a scene, pick a style, and watch AI create stunning comic panels complete with artwork, speech bubbles, captions, and dynamic layouts — all in seconds.
+A web application that generates full comic book pages from simple text descriptions. Type a scene, pick a style, and get stunning comic panels complete with artwork, speech bubbles, captions, and dynamic layouts — all in seconds.
 
-![AI Comic Book Generator Demo](public/demo-screenshot.jpg)
+![Comic Book Generator Demo](public/demo-screenshot.jpg)
 
-## ✨ Features
+## Features
 
-- **🎨 AI-Powered Panel Generation** — Generates vivid comic book panels from text prompts using state-of-the-art image models (FLUX.1-dev / FLUX.2-dev-Turbo)
-- **📝 Smart Script Generation** — Uses LLMs (DeepSeek R1, Qwen, or GPT-5) to create panel scripts with scene descriptions, narration, captions, and speech bubbles
-- **🧑‍🎨 Multiple Art Styles** — Choose from different visual styles for your comic panels
-- **📐 Flexible Grid Layouts** — Multiple layout options including 2x2 grids, asymmetric layouts, and more
-- **💬 Speech Bubbles & Captions** — Auto-generated dialogue and narration overlaid on panels
-- **🔄 Per-Panel Regeneration** — Don't like a panel? Add a comment and regenerate just that one
-- **💾 Persistent Images** — Generated panels are saved to disk so they survive page refreshes
-- **🎭 Character Consistency** — Advanced prompting ensures the main character looks consistent across all panels
-- **🌙 Dark Theme UI** — Sleek, modern dark interface with purple accents and particle effects
+- **Panel Generation** — Generates vivid comic book panels from text prompts using state-of-the-art image models (FLUX.1-dev / FLUX.2-dev-Turbo)
+- **Smart Script Generation** — Uses LLMs (DeepSeek R1, Qwen, or GPT-5) to create panel scripts with scene descriptions, narration, captions, and speech bubbles
+- **Multiple Art Styles** — Choose from different visual styles for your comic panels
+- **Flexible Grid Layouts** — Multiple layout options including 2x2 grids, asymmetric layouts, and more
+- **Speech Bubbles & Captions** — Auto-generated dialogue and narration overlaid on panels
+- **Per-Panel Regeneration** — Don't like a panel? Add a comment and regenerate just that one
+- **Persistent Images** — Generated panels are saved to disk so they survive page refreshes
+- **Character Consistency** — Advanced prompting ensures the main character looks consistent across all panels
+- **Dark Theme UI** — Sleek, modern dark interface with purple accents and particle effects
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
@@ -27,7 +27,7 @@ An AI-powered web application that generates full comic book pages from simple t
 | **Image Generation** | FLUX.1-dev / FLUX.2-dev-Turbo (via Hugging Face Inference) |
 | **Character Analysis** | OpenAI Vision API |
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -64,7 +64,7 @@ An AI-powered web application that generates full comic book pages from simple t
 
 5. **Open** [http://localhost:3000](http://localhost:3000) **in your browser**
 
-## 📖 How It Works
+## How It Works
 
 ```mermaid
 graph LR
@@ -79,7 +79,7 @@ graph LR
 3. **FLUX generates the artwork** — each panel gets a detailed image prompt with style and character info
 4. **The app composes the page** — panels are arranged in your chosen grid layout with speech bubbles and captions overlaid
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 comic-book-app/
@@ -102,12 +102,12 @@ comic-book-app/
 └── package.json
 ```
 
-## 📄 License
+## License
 
 This project is for educational and personal use.
 
 ---
 
 <p align="center">
-  Built with ❤️ using Next.js, React, and AI
+  Built with Next.js and React
 </p>

@@ -105,9 +105,3 @@ comic-book-app/
 ## License
 
 This project is for educational and personal use.
-
----
-
-<p align="center">
-  Built with Next.js and React
-</p>

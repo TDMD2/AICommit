@@ -20,21 +20,32 @@ export default function Home() {
   const handleGenerate = async () => {
     setIsGenerating(true);
     setError(null);
-    setSpreads([]);
+
+    // For single-panel mode, don't clear existing panels
+    const isSinglePanel = selectedPanel !== null && spreads.length > 0;
+    if (!isSinglePanel) {
+      setSpreads([]);
+    }
+
+    // Build existing panels array for single-panel regeneration
+    const existingPanels = isSinglePanel && spreads[0]
+      ? [...spreads[0].rightPanels, ...spreads[0].leftPanels]
+      : undefined;
 
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          description: story, // Keeping description for backward compat logic helper, but mainly using story/style
+          description: story,
           story,
           style,
           format: "comic",
           grid,
           captions,
           bubbles,
-          selectedPanel,
+          selectedPanel: isSinglePanel ? selectedPanel : null,
+          existingPanels: isSinglePanel ? existingPanels : undefined,
         }),
       });
 
@@ -45,6 +56,11 @@ export default function Home() {
 
       const data = await res.json();
       setSpreads(data.spreads);
+
+      // After single-panel regeneration, deselect the panel
+      if (isSinglePanel) {
+        setSelectedPanel(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {

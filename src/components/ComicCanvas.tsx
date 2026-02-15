@@ -18,7 +18,7 @@ export default function ComicCanvas({ grid, spread, isGenerating, selectedPanel,
         return [1, 2, 3, 4];
     };
 
-    const panels = spread ? (spread.rightPanels.length > 0 ? spread.rightPanels : spread.leftPanels) : [];
+    const panels = spread ? [...spread.rightPanels, ...spread.leftPanels] : [];
     const placeholders = getPlaceholders();
 
     // Determine grid class

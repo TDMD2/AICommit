@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { HfInference } from "@huggingface/inference";
-import OpenAI from "openai";
+import OpenAI from "openai"; // Optional: only for character trait analysis
+import fs from "fs";
+import path from "path";
 
 export const maxDuration = 300; // 5 min timeout for image generation
 
@@ -17,16 +19,83 @@ interface SpreadScript {
 
 export async function POST(req: NextRequest) {
     try {
-        const { description, story, style, format = "comic", grid, captions, bubbles } = await req.json();
+        const { description, story, style, format = "comic", grid, captions, bubbles, selectedPanel, existingPanels } = await req.json();
 
         // Backward compatibility: use description if story/style not provided
         const finalStory = story || description;
         const selectedStyle = style || "";
 
+        // ============================================================
+        // SINGLE-PANEL REGENERATION MODE
+        // When a specific panel is selected AND we have existing panels,
+        // skip script generation and only regenerate that one panel.
+        // ============================================================
+        if (selectedPanel !== null && selectedPanel !== undefined && existingPanels && Array.isArray(existingPanels)) {
+            console.log(`[Single Panel] Regenerating panel ${selectedPanel} with prompt: "${finalStory}"`);
+
+            const getStylePromptSingle = (styleName: string): string => {
+                const styleMap: Record<string, string> = {
+                    "Japanese": "Manga art style, black and white ink illustration, screentones, high contrast, detailed background, anime aesthetic, traditional manga inking, no colors, monochrome.",
+                    "Nihonga": "Nihonga style, traditional Japanese painting, mineral pigments, gold/silver leaf details, washi paper texture, flat perspective, elegant nature motifs, soft texture, japanese art.",
+                    "Franco-Belgian": "Franco-Belgian comic style (Bande Dessinée), Ligne Claire (Clear Line) style, uniform bold outlines, flat vibrant colors, no cross-hatching, highly detailed backgrounds with cartoonish characters, Hergé/Tintin aesthetic.",
+                    "American (modern)": "Modern American superhero comic style, digital coloring, high fidelity, cinematic lighting, detailed shading, realistic anatomy, dynamic action, 4k resolution, marvel/dc modern era aesthetic.",
+                    "American (1950)": "Retro 1950s Golden Age comic book style, Ben-Day dots, halftone pattern, CMYK offset printing look, vintage paper texture, bold black ink outlines, primary colors, pulp fiction aesthetic, aged comic book look.",
+                    "Flying saucer": "Retro 1950s Sci-Fi comic cover art, pulp magazine style, mysterious flying saucers, dramatic lighting, vintage futuristic aesthetic, bold colors, grainy texture.",
+                    "Humanoid": "Sci-fi humanoid creative concept art, bio-mechanical details, anthropomorphic character design, intricate textures, surreal and futuristic features, cinematic lighting.",
+                    "Haddock": "Ligne Claire style character caricature, expressive, bold uniform lines, flat colors, humorous exaggeration, detailed clothing texture, distinct Belgian comic aesthetic.",
+                    "Armorican": "Classic French comic style (Asterix), humorous cartoon style, expressive characters, historical Gaul setting, vibrant colors, ink lines, detailed scenic backgrounds.",
+                    "3D Render": "3D stylized render, Pixar/Disney animation style, soft lighting, ambient occlusion, 3D character design, vibrant colors, high quality render, c4d, blender.",
+                    "Klimt": "Gustav Klimt art style, Golden Phase, gold leaf textures, mosaic patterns, intricate geometric ornamentation, sensual and decorative, rich jewel tones, symbolism, oil painting.",
+                    "Medieval": "Medieval illuminated manuscript art style, parchment paper texture, gold leaf accents, gothic calligraphy influences, flat perspective, intricate floral borders, historical aesthetic.",
+                    "Egyptian": "Ancient Egyptian wall art style, hieroglyphic details, profile figures, papyrus texture, sandstone colors, gold and lapis lazuli accents, 2D perspective, historical mural."
+                };
+                return styleMap[styleName] || styleName;
+            };
+
+            const stylePrompt = getStylePromptSingle(selectedStyle);
+            const scenePrompt = stylePrompt
+                ? `[Style: ${stylePrompt}] ${finalStory}`
+                : finalStory;
+
+            try {
+                const newImageSrc = await generatePanelImage(scenePrompt);
+
+                // Clone the existing panels and replace only the targeted one
+                const updatedPanels = existingPanels.map((panel: any, index: number) => {
+                    if (index === selectedPanel) {
+                        return {
+                            ...panel,
+                            src: newImageSrc,
+                            // Keep existing narration/caption unless user wants to change them
+                        };
+                    }
+                    return panel;
+                });
+
+                return NextResponse.json({
+                    title: "Updated Comic",
+                    spreads: [{
+                        leftPanels: [],
+                        rightPanels: updatedPanels,
+                        leftLayout: "blank",
+                        rightLayout: `canvas-${grid}`,
+                    }],
+                    singlePanelMode: true,
+                    updatedPanelIndex: selectedPanel,
+                });
+            } catch (err: any) {
+                console.error(`[Single Panel] Failed to regenerate panel ${selectedPanel}:`, err.message);
+                return NextResponse.json(
+                    { error: `Failed to regenerate panel ${selectedPanel + 1}: ${err.message}` },
+                    { status: 500 }
+                );
+            }
+        }
+
         // Helper to get detailed style prompt
         const getStylePrompt = (styleName: string): string => {
             const styleMap: Record<string, string> = {
-                "Japanese": "Japanese Manga style, black and white ink illustration, screentones, high contrast, detailed background, anime aesthetic, traditional manga inking, no colors, monochrome.",
+                "Japanese": "Manga art style, black and white ink illustration, screentones, high contrast, detailed background, anime aesthetic, traditional manga inking, no colors, monochrome.",
                 "Nihonga": "Nihonga style, traditional Japanese painting, mineral pigments, gold/silver leaf details, washi paper texture, flat perspective, elegant nature motifs, soft texture, japanese art.",
                 "Franco-Belgian": "Franco-Belgian comic style (Bande Dessinée), Ligne Claire (Clear Line) style, uniform bold outlines, flat vibrant colors, no cross-hatching, highly detailed backgrounds with cartoonish characters, Hergé/Tintin aesthetic.",
                 "American (modern)": "Modern American superhero comic style, digital coloring, high fidelity, cinematic lighting, detailed shading, realistic anatomy, dynamic action, 4k resolution, marvel/dc modern era aesthetic.",
@@ -52,12 +121,12 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const openaiApiKey = process.env.OPENAI_API_KEY;
+        const openaiApiKey = process.env.OPENAI_API_KEY; // Optional: for character trait analysis
         const hfToken = process.env.HF_TOKEN;
 
-        if (!hfToken && !openaiApiKey) {
+        if (!hfToken) {
             return NextResponse.json(
-                { error: "Missing API Keys. Please configure HF_TOKEN (preferred) or OPENAI_API_KEY." },
+                { error: "Missing HF_TOKEN. Please configure it for Qwen script generation and image generation." },
                 { status: 500 }
             );
         }
@@ -66,21 +135,13 @@ export async function POST(req: NextRequest) {
         const panelCount = 4;
 
         let script: { title: string; spreads: SpreadScript[] } | null = null;
-        let usedModel = "gpt-5.2";
 
-        // Use GPT-5.2 only for script generation (no fallback)
-        if (!openaiApiKey) {
-            return NextResponse.json(
-                { error: "Missing OPENAI_API_KEY. Please configure it for GPT-5.2 script generation." },
-                { status: 500 }
-            );
-        }
-
-        console.log("Generating script with GPT-5.2 (OpenAI)...");
+        // Use Qwen3-32B via HuggingFace for script generation
+        console.log("Generating script with Qwen3-32B (HuggingFace)...");
         try {
-            script = await generateScriptWithGPT5(finalStory, selectedStyle, panelCount, openaiApiKey);
+            script = await generateScriptWithQwen(finalStory, selectedStyle, panelCount, hfToken);
         } catch (err: any) {
-            console.error("GPT-5.2 generation failed:", err);
+            console.error("Qwen3 generation failed:", err);
             return NextResponse.json(
                 { error: `Failed to generate comic script: ${err.message || String(err)}` },
                 { status: 500 }
@@ -94,7 +155,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        console.log(`Script generated successfully using ${usedModel}`);
+        console.log(`Script generated successfully using Qwen3-32B`);
 
         // Post-processing: Remove em dashes and en dashes
         if (script.spreads) {
@@ -159,16 +220,28 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Helper: build prompt for a panel
-        const buildPanelPrompt = (panel: any): string => {
-            let fullScenePrompt = characterTraits
-                ? `[Main character: ${characterTraits}] ${panel.scene}.`
-                : `${panel.scene}.`;
-            if (finalStylePrompt) {
-                fullScenePrompt += ` ${finalStylePrompt}`;
-            } else {
-                fullScenePrompt += ` Style: comic book art.`;
+        // Helper: build prompt for a panel with ALL characters
+        const buildPanelPrompt = (panel: any, characters: any[] = []): string => {
+            let charBlock = "";
+
+            // Build character descriptions from ALL characters in the script
+            if (characters && characters.length > 0) {
+                charBlock = characters.map((c: any) =>
+                    `[${c.name}: ${c.visual_description}]`
+                ).join(" ");
             }
+            // Fallback to old analysis method if script didn't provide characters
+            else if (characterTraits) {
+                charBlock = `[Character: ${characterTraits}]`;
+            }
+
+            let fullScenePrompt = "";
+            if (charBlock) {
+                fullScenePrompt = `[Style: ${finalStylePrompt}] ${charBlock} ${panel.scene}. Each character must look visually distinct from every other character.`;
+            } else {
+                fullScenePrompt = `[Style: ${finalStylePrompt}] ${panel.scene}`;
+            }
+
             return fullScenePrompt;
         };
 
@@ -192,7 +265,7 @@ export async function POST(req: NextRequest) {
                     continue;
                 }
 
-                const fullScenePrompt = buildPanelPrompt(panel);
+                const fullScenePrompt = buildPanelPrompt(panel, (script as any).characters || []);
                 console.log(`[Generate] Panel ${panelIndex + 1} prompt: ${fullScenePrompt}`);
 
                 // Small delay between requests to avoid rate-limiting
@@ -232,7 +305,7 @@ export async function POST(req: NextRequest) {
                     continue;
                 }
 
-                const fullScenePrompt = buildPanelPrompt(panel);
+                const fullScenePrompt = buildPanelPrompt(panel, (script as any).characters || []);
                 console.log(`[Generate Left] Panel ${panelIndex + 1} prompt: ${fullScenePrompt}`);
 
                 await new Promise(r => setTimeout(r, 1500));
@@ -254,9 +327,11 @@ export async function POST(req: NextRequest) {
                 }
             }
 
+            // Merge ALL panels into rightPanels (leftPanels is not rendered by the canvas)
+            const allPanels = [...rightPanels, ...leftPanels];
             spreads.push({
-                leftPanels,
-                rightPanels,
+                leftPanels: [],
+                rightPanels: allPanels,
                 leftLayout: "blank",
                 rightLayout: `canvas-${grid}`,
             });
@@ -277,6 +352,165 @@ export async function POST(req: NextRequest) {
 
 // --- Helper Functions ---
 
+async function generateScriptWithQwen(description: string, style: string, panelCount: number, hfToken: string): Promise<any> {
+    const systemPrompt = `You are a legendary comic book writer and visual director.
+    Your task is to turn a story description into a JSON script for a single comic book page with EXACTLY ${panelCount} panels.
+
+    Story: "${description}"
+    Visual Style: "${style || "Standard Comic Book"}"
+
+    CRITICAL INSTRUCTIONS:
+    1.  **Panel Count**: You MUST generate EXACTLY ${panelCount} panels. No more, no less.
+    2.  **Output Format**: You must output a JSON object with a "spreads" array.
+    3.  **Visuals Only**: The "scene" field must be a raw visual description for an image generator.
+    4.  **No Markdown**: Do not use markdown formatting like \`\`\`json. Just output the raw JSON.
+    5.  **Narration/Dialogue**: EVERY panel must have either "narration" OR "caption" (or both). Do not leave them empty unless absolutely necessary for the story.
+    6.  **MAIN CHARACTER ALWAYS IN FRAME**: The main character(s) from the story MUST appear and be clearly visible in EVERY single panel. Never show a panel without the main character. Always describe the main character's pose, position, and action in each scene description.
+    7.  **NO DUPLICATE PANELS**: Each panel MUST show a DIFFERENT moment, angle, or composition. Vary camera angles (close-up, medium shot, wide shot, low angle, over-the-shoulder). Never repeat the same framing or composition between panels. Each panel must feel visually distinct.
+    8.  **SCENE DESCRIPTION REQUIREMENTS**: Each scene description must be CONCISE (2-3 sentences MAX). Focus on: (a) the main character and their action, (b) the camera angle, (c) minimal background. Do NOT write long paragraphs. Short, punchy visual descriptions work best for image generation.
+    9.  **IMMEDIATE ACTION**: The user's requested action (e.g. 'punching') must happen IMMEDIATELY in Panel 1. Do NOT delay with setup, dodging, or landing. If the user says 'punching', show the IMPACT of the punch in multiple panels (different angles). Avoid 'choreography' unless requested.
+    10. **CHARACTER CONSISTENCY**: You must output a "characters" array with ALL named characters (hero, villain, sidekick, etc.). Each character must have a DETAILED "visual_description" that is VISUALLY DISTINCT from every other character (different colors, body type, clothing, costume). The first character should be the main hero. Describe differences explicitly (e.g. if the hero wears red, the villain should NOT wear red).
+    11. **MAINTAIN SETTING & IDENTITY**: Do NOT change the characters' appearance, clothing, or the story setting to match the "Visual Style". If the story is about Greek Gods, keep them in Greek attire even if the style is "Japanese Manga" or "Cyberpunk". The style applies ONLY to the drawing technique (lines, shading), NOT the content.
+
+    REQUIRED JSON STRUCTURE:
+    {
+      "title": "Comic Title",
+      "characters": [
+        {
+          "name": "Hero Name",
+          "visual_description": "Detailed hero appearance (e.g. 'Tall, muscular man, short black hair, red cape, blue suit with gold S on chest')..."
+        },
+        {
+          "name": "Villain/Secondary Name",
+          "visual_description": "Detailed villain appearance, visually DISTINCT from hero (e.g. 'Stocky man, bowl-cut brown hair, round sunglasses, green bodysuit, brown trench coat, four mechanical tentacle arms')..."
+        }
+      ],
+      "spreads": [
+        {
+          "rightPanels": [
+            {
+              "scene": "Visual description of panel 1...",
+              "narration": "Narration text (required if no caption)...",
+              "caption": "Speech bubble text (required if no narration)..."
+            },
+             {
+              "scene": "Visual description of panel 2...",
+              "narration": "Narration text...",
+              "caption": "Speech bubble text..."
+            }
+            // ... exactly ${panelCount} panels in total
+          ],
+          "leftPanels": []
+        }
+      ]
+    }
+    `;
+
+    let currentMessages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Generate the JSON script now for exactly ${panelCount} panels. Output ONLY valid JSON, no explanation.` }
+    ];
+
+    const maxRetries = 2;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        console.log(`[Qwen3] Generation Attempt ${attempt + 1}/${maxRetries + 1} for ${panelCount} panels...`);
+
+        try {
+            const response = await fetch(
+                "https://router.huggingface.co/v1/chat/completions",
+                {
+                    headers: {
+                        Authorization: `Bearer ${hfToken}`,
+                        "Content-Type": "application/json",
+                    },
+                    method: "POST",
+                    body: JSON.stringify({
+                        model: "Qwen/Qwen3-32B",
+                        messages: currentMessages,
+                        max_tokens: 4000,
+                        temperature: 0.6,
+                    }),
+                }
+            );
+
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error(`Qwen3 API Error: ${response.status} ${response.statusText}`, errText);
+                throw new Error(`Qwen3 API Error: ${response.status} ${response.statusText} - ${errText}`);
+            }
+
+            const result = await response.json();
+            let generatedText = result?.choices?.[0]?.message?.content || "";
+
+            // Remove <think> blocks (Qwen3 reasoning output)
+            generatedText = generatedText.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+            // Strip markdown
+            generatedText = generatedText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+
+            const jsonMatch = extractFirstJson(generatedText);
+
+            if (!jsonMatch) {
+                console.error("Qwen3 did not return JSON. Content:", generatedText);
+                if (attempt < maxRetries) {
+                    currentMessages.push({ role: "assistant", content: generatedText });
+                    currentMessages.push({ role: "user", content: "You did not return valid JSON. Please output ONLY valid JSON." });
+                    continue;
+                }
+                throw new Error("Qwen3 did not return valid JSON.");
+            }
+
+            const parsed = JSON.parse(jsonMatch.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]"));
+
+            // Validate Structure & Fixes
+            let script = parsed;
+            if (Array.isArray(parsed)) script = { title: "Generated Comic", spreads: parsed };
+
+            // Normalize to spreads
+            if (!script.spreads) {
+                if (script.pages && Array.isArray(script.pages)) script.spreads = script.pages;
+                else if (script.panels && Array.isArray(script.panels)) {
+                    script.spreads = [{ rightPanels: script.panels, leftPanels: [] }];
+                }
+            }
+
+            if (!script.spreads || !Array.isArray(script.spreads)) {
+                if (attempt < maxRetries) {
+                    currentMessages.push({ role: "assistant", content: generatedText });
+                    currentMessages.push({ role: "user", content: "Invalid JSON structure. Missing 'spreads' array." });
+                    continue;
+                }
+                throw new Error("Qwen3 JSON missing 'spreads' array.");
+            }
+
+            // CHECK PANEL COUNT
+            let totalPanels = 0;
+            script.spreads.forEach((s: any) => {
+                if (s.rightPanels) totalPanels += s.rightPanels.length;
+                if (s.leftPanels) totalPanels += s.leftPanels.length;
+            });
+
+            if (totalPanels !== panelCount) {
+                console.warn(`[Qwen3] Mismatch! Requested ${panelCount}, got ${totalPanels}. Retrying...`);
+                if (attempt < maxRetries) {
+                    currentMessages.push({ role: "assistant", content: generatedText });
+                    currentMessages.push({ role: "user", content: `Create exactly ${panelCount} panels. You generated ${totalPanels}. Please fix and generate exactly ${panelCount} panels.` });
+                    continue;
+                }
+                console.error(`[Qwen3] Failed to generate correct panel count after retries. Returning ${totalPanels} panels.`);
+            }
+
+            return script;
+
+        } catch (error: any) {
+            console.error(`Qwen3 attempt ${attempt + 1} failed:`, error);
+            if (attempt === maxRetries) throw error;
+        }
+    }
+}
+
+
+
 async function generateScriptWithDeepSeekHF(description: string, style: string, panelCount: number, hfToken: string): Promise<any> {
     const systemPrompt = `You are a legendary comic book writer and visual director.
     Your task is to turn a story description into a JSON script for a single comic book page with EXACTLY ${panelCount} panels.
@@ -293,10 +527,23 @@ async function generateScriptWithDeepSeekHF(description: string, style: string, 
     6.  **MAIN CHARACTER ALWAYS IN FRAME**: The main character(s) from the story MUST appear and be clearly visible in EVERY single panel. Never show a panel without the main character. Always describe the main character's pose, position, and action in each scene description.
     7.  **NO DUPLICATE PANELS**: Each panel MUST show a DIFFERENT moment, angle, or composition. Vary camera angles (close-up, medium shot, wide shot, low angle, over-the-shoulder). Never repeat the same framing or composition between panels. Each panel must feel visually distinct.
     8.  **SCENE DESCRIPTION REQUIREMENTS**: Each scene description must include: (a) the main character's full appearance and what they are doing, (b) the camera angle/framing, (c) the background/environment details. Be specific and detailed.
+    9.  **IMMEDIATE ACTION**: The user's requested action (e.g. 'punching') must happen IMMEDIATELY in Panel 1. Do NOT delay with setup, dodging, or landing. If the user says 'punching', show the IMPACT of the punch in multiple panels (different angles). Avoid 'choreography' unless requested.
+    10. **CHARACTER CONSISTENCY**: You must output a "characters" array with ALL named characters (hero, villain, sidekick, etc.). Each character must have a DETAILED "visual_description" that is VISUALLY DISTINCT from every other character (different colors, body type, clothing, costume). The first character should be the main hero. Describe differences explicitly (e.g. if the hero wears red, the villain should NOT wear red).
+    11. **MAINTAIN SETTING & IDENTITY**: Do NOT change the characters' appearance, clothing, or the story setting to match the "Visual Style". If the story is about Greek Gods, keep them in Greek attire even if the style is "Japanese Manga" or "Cyberpunk". The style applies ONLY to the drawing technique (lines, shading), NOT the content.
 
     REQUIRED JSON STRUCTURE:
     {
       "title": "Comic Title",
+      "characters": [
+        {
+          "name": "Hero Name",
+          "visual_description": "Detailed hero appearance (e.g. 'Tall, muscular man, short black hair, red cape, blue suit with gold S on chest')..."
+        },
+        {
+          "name": "Villain/Secondary Name",
+          "visual_description": "Detailed villain appearance, visually DISTINCT from hero (e.g. 'Stocky man, bowl-cut brown hair, round sunglasses, green bodysuit, brown trench coat, four mechanical tentacle arms')..."
+        }
+      ],
       "spreads": [
         {
           "rightPanels": [
@@ -440,11 +687,24 @@ async function generateScriptWithGPT5(description: string, style: string, panelC
     6.  **MAIN CHARACTER ALWAYS IN FRAME**: The main character(s) from the story MUST appear and be clearly visible in EVERY single panel. Never show a panel without the main character. Always describe the main character's pose, position, and action in each scene description.
     7.  **NO DUPLICATE PANELS**: Each panel MUST show a DIFFERENT moment, angle, or composition. Vary camera angles (close-up, medium shot, wide shot, low angle, over-the-shoulder). Never repeat the same framing or composition between panels. Each panel must feel visually distinct.
     8.  **SCENE DESCRIPTION REQUIREMENTS**: Each scene description must be CONCISE (2-3 sentences MAX). Focus on: (a) the main character and their action, (b) the camera angle, (c) minimal background. Do NOT write long paragraphs. Short, punchy visual descriptions work best for image generation.
-    9.  **CORE ACTION FIRST**: The user's requested action (e.g. "punching", "fighting", "saving") must be the PRIMARY focus. At least 2 panels must show the exact action described. Start the scene description with the main action, not the environment. The climactic panel should show the action at its peak.
+    9.  **IMMEDIATE ACTION**: The user's requested action (e.g. 'punching') must happen IMMEDIATELY in Panel 1. Do NOT delay with setup, dodging, or landing. If the user says 'punching', show the IMPACT of the punch in multiple panels (different angles). Avoid 'choreography' unless requested.
+    10. **IMPACT FRAMES**: Focus on the moment of impact or peak intensity. Avoid static poses or 'about to' moments. Make the action visceral and clear.
+    11. **CHARACTER CONSISTENCY**: You must output a "characters" array with ALL named characters (hero, villain, sidekick, etc.). Each character must have a DETAILED "visual_description" that is VISUALLY DISTINCT from every other character (different colors, body type, clothing, costume). The first character should be the main hero. Describe differences explicitly (e.g. if the hero wears red, the villain should NOT wear red).
+    12. **MAINTAIN SETTING & IDENTITY**: Do NOT change the characters' appearance, clothing, or the story setting to match the "Visual Style". If the story is about Greek Gods, keep them in Greek attire even if the style is "Japanese Manga" or "Cyberpunk". The style applies ONLY to the drawing technique (lines, shading), NOT the content.
 
     REQUIRED JSON STRUCTURE:
     {
       "title": "Comic Title",
+      "characters": [
+        {
+          "name": "Hero Name",
+          "visual_description": "Detailed hero appearance (e.g. 'Tall, muscular man, short black hair, red cape, blue suit with gold S on chest')..."
+        },
+        {
+          "name": "Villain/Secondary Name",
+          "visual_description": "Detailed villain appearance, visually DISTINCT from hero (e.g. 'Stocky man, bowl-cut brown hair, round sunglasses, green bodysuit, brown trench coat, four mechanical tentacle arms')..."
+        }
+      ],
       "spreads": [
         {
           "rightPanels": [
@@ -563,31 +823,35 @@ async function generatePanelImage(
 
     const hf = new HfInference(hfToken);
 
-    // Truncate the scene description to avoid prompt overload (FLUX works best under ~120 words)
+    // Configurable model via env var
+    const primaryModel = process.env.IMAGE_MODEL || "Qwen/Qwen-Image";
+    // Fallback model to use if primary fails (often due to safety filters on FLUX)
+    const fallbackModel = "Qwen/Qwen-Image";
+
+    // Truncate the scene description to avoid prompt overload
     const truncatedScene = sceneDescription.split(/\s+/).slice(0, 120).join(' ');
 
-    // Prompt: positive quality keywords that FLUX.2 responds to well
-    const prompt = `Professional comic book illustration. ${truncatedScene} Masterful human anatomy, dynamic pose, professional illustration quality. Vivid colors, cinematic lighting, sharp details.`;
+    const prompt = `Professional comic book illustration. ${truncatedScene} Each character must have a unique, distinct appearance - no two characters should look alike. Masterful human anatomy, dynamic pose, professional illustration quality. Vivid colors, cinematic lighting, sharp details.`;
 
     const maxRetries = 3;
+
+    // Attempt with Primary Model
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            console.log(`Generating image with FLUX.2-dev-Turbo (fal-ai)... attempt ${attempt}/${maxRetries}`);
+            console.log(`Generating image with ${primaryModel} (fal-ai)... attempt ${attempt}/${maxRetries}`);
 
             const response = await hf.textToImage({
-                model: "fal/FLUX.2-dev-Turbo",
+                model: primaryModel,
                 inputs: prompt,
                 provider: "fal-ai",
             });
 
-            // Force cast to Blob
             const blob = response as unknown as Blob;
             const buffer = Buffer.from(await blob.arrayBuffer());
 
-            // Validate: reject empty or suspiciously small blobs
-            // Normal FLUX images are 50KB+; anything under 20KB is likely a near-black/corrupt image
+            // Validate: reject empty or suspiciously small blobs (likely black/corrupt images)
             if (buffer.length < 20000) {
-                console.warn(`[FLUX] Attempt ${attempt}: received suspiciously small image (${buffer.length} bytes), likely dark/corrupt. Retrying...`);
+                console.warn(`[${primaryModel}] Attempt ${attempt}: received suspiciously small image (${buffer.length} bytes), likely dark/corrupt.`);
                 if (attempt < maxRetries) {
                     await new Promise(r => setTimeout(r, 2000));
                     continue;
@@ -595,21 +859,70 @@ async function generatePanelImage(
                 throw new Error(`Image too small (${buffer.length} bytes) - likely a dark/corrupt render.`);
             }
 
-            console.log(`[FLUX] Success: ${buffer.length} bytes`);
-            return `data:image/jpeg;base64,${buffer.toString("base64")}`;
+            console.log(`[${primaryModel}] Success: ${buffer.length} bytes`);
+            return await savePanelImageToDisk(buffer);
 
         } catch (error: any) {
-            console.error(`FLUX attempt ${attempt} failed:`, error.message);
+            console.error(`${primaryModel} attempt ${attempt} failed:`, error.message);
             if (attempt < maxRetries) {
                 await new Promise(r => setTimeout(r, 2000));
                 continue;
             }
-            throw new Error(`Image Generation Error (fal-ai): ${error.message}`);
+            // If primary fails all retries, do NOT throw yet. Fall through to fallback.
+            console.warn(`All attempts with ${primaryModel} failed. Switching to fallback model: ${fallbackModel}`);
         }
     }
 
-    // Should never reach here, but just in case
+    // Fallback Attempt (One shot)
+    if (primaryModel !== fallbackModel) {
+        try {
+            console.log(`Generating image with FALLBACK ${fallbackModel}...`);
+            const response = await hf.textToImage({
+                model: fallbackModel,
+                inputs: prompt,
+                provider: "fal-ai", // or undefined to let HF decide
+            });
+
+            const blob = response as unknown as Blob;
+            const buffer = Buffer.from(await blob.arrayBuffer());
+
+            if (buffer.length < 5000) { // Qwen images might be smaller, but <5kb is still suspicious
+                throw new Error(`Fallback image too small (${buffer.length} bytes).`);
+            }
+
+            console.log(`[${fallbackModel}] Success (Fallback): ${buffer.length} bytes`);
+            return await savePanelImageToDisk(buffer);
+        } catch (err: any) {
+            console.error(`Fallback ${fallbackModel} failed:`, err.message);
+            // Now we throw the original error or the fallback error
+            throw new Error(`Primary and Fallback generation failed. Last error: ${err.message}`);
+        }
+    }
+
     throw new Error("Image generation failed after all retries.");
+}
+
+/**
+ * Save a generated image buffer to public/panels/ and return the URL path.
+ * Falls back to base64 data URI if file writing fails.
+ */
+async function savePanelImageToDisk(buffer: Buffer): Promise<string> {
+    try {
+        const panelsDir = path.join(process.cwd(), "public", "panels");
+        // Ensure directory exists
+        if (!fs.existsSync(panelsDir)) {
+            fs.mkdirSync(panelsDir, { recursive: true });
+        }
+
+        const filename = `panel-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.jpg`;
+        const filePath = path.join(panelsDir, filename);
+        fs.writeFileSync(filePath, buffer);
+        console.log(`[SaveImage] Saved to ${filePath}`);
+        return `/panels/${filename}`;
+    } catch (err) {
+        console.warn(`[SaveImage] Failed to save to disk, falling back to base64:`, err);
+        return `data:image/jpeg;base64,${buffer.toString("base64")}`;
+    }
 }
 
 function generatePlaceholder(text: string, errorDetail?: string): string {

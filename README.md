@@ -48,14 +48,24 @@ A web application that generates full comic book pages from simple text descript
    npm install
    ```
 
-3. **Configure environment variables**
+3. **Set up your API keys**
 
-   Create a `.env.local` file in the root directory:
+   > All API keys go in a file called **`.env.local`** in the project root folder (same folder as `package.json`). Create this file if it doesn't exist.
+
+   Open `.env.local` in any text editor and add the following:
    ```env
+   # REQUIRED — Hugging Face token for image generation
+   # Get yours at: https://huggingface.co/settings/tokens
    HF_TOKEN=your_huggingface_token_here
-   OPENAI_API_KEY=your_openai_api_key_here   # Optional
-   IMAGE_MODEL=FLUX.1-dev                     # Or FLUX.2-dev-Turbo
+
+   # OPTIONAL — OpenAI key for GPT-5 script generation & character analysis
+   OPENAI_API_KEY=your_openai_api_key_here
+
+   # OPTIONAL — Choose the image model (default: FLUX.1-dev)
+   IMAGE_MODEL=FLUX.1-dev
    ```
+
+   > **Note:** The `.env.local` file is already in `.gitignore`, so your keys will never be pushed to GitHub.
 
 4. **Start the development server**
    ```bash
